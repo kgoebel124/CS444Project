@@ -146,18 +146,30 @@ bool process_message(int session_id, const char message[]) {
     // for the first variable and the second variable, respectively.
 
     // Makes a copy of the string since strtok() will modify the string that it is processing.
+
+    // Joe: Prevent buffer overflow
+    if (strlen(message) >= BUFFER_LEN)
+        return false;
+
     char data[BUFFER_LEN];
     strcpy(data, message);
 
     // Processes the result variable.
-    token = strtok(data, " ");
-    result_idx = token[0] - 'a';
+    token = strtok(data, " ");          // Joe (Comment): Get first token
+    if (token == NULL) return false;    // Joe: Prevent NULL token
+    if (strlen(token) != 1) return false; // Joe: Prevent invalid token length
+
+    result_idx = token[0] - 'a';        // Joe (Comment): Applies offset to token? Not sure what the point of this is
 
     // Processes "=".
     token = strtok(NULL, " ");
+    if (token == NULL) return false;    // Joe: Prevent NULL token
+    if (strcmp(token, "=") != 0) return false;    // Joe: Ensure equals token
 
     // Processes the first variable/value.
     token = strtok(NULL, " ");
+    if (token == NULL) return false;    // Joe: Prevent NULL token
+
     if (is_str_numeric(token)) {
         first_value = strtod(token, NULL);
     } else {
@@ -172,33 +184,50 @@ bool process_message(int session_id, const char message[]) {
         session_list[session_id].values[result_idx] = first_value;
         return true;
     }
+    if (strlen(token) != 1) return false; // Joe: Prevent invalid token length
     symbol = token[0];
 
     // Processes the second variable/value.
     token = strtok(NULL, " ");
+    if (token == NULL) return false; // Joe: Prevent NULL token
+
     if (is_str_numeric(token)) {
         second_value = strtod(token, NULL);
     } else {
+        if (strlen(token) != 1) return false; // Joe: Prevent invalid token length
         int second_idx = token[0] - 'a';
+
+        // Joe: Throw error when attempting to access undeclared variable
+        // TODO: I don't know why this isn't working
+        if (!session_list[session_id].variables[second_idx])
+            return false;
+
         second_value = session_list[session_id].values[second_idx];
     }
 
     // No data should be left over thereafter.
     token = strtok(NULL, " ");
+    if (token != NULL) return false; // Joe: ENSURE NULL token
 
     session_list[session_id].variables[result_idx] = true;
 
-    if (symbol == '+') {
-        session_list[session_id].values[result_idx] = first_value + second_value;
-    } else if (symbol == '-') {
-        session_list[session_id].values[result_idx] = first_value - second_value;
-    } else if (symbol == '*') {
-        session_list[session_id].values[result_idx] = first_value * second_value;
-    } else if (symbol == '/') {
-        session_list[session_id].values[result_idx] = first_value / second_value;
+    // Joe: Replaced if chain with switch, and catch unknown symbols
+    switch (symbol) {
+        case '+':
+            session_list[session_id].values[result_idx] = first_value + second_value;
+            return true;
+        case '-':
+            session_list[session_id].values[result_idx] = first_value - second_value;
+            return true;
+        case '*':
+            session_list[session_id].values[result_idx] = first_value * second_value;
+            return true;
+        case '/':
+            session_list[session_id].values[result_idx] = first_value / second_value;
+            return true;
+        default:
+            return false;
     }
-
-    return true;
 }
 
 /**
@@ -327,7 +356,8 @@ void browser_handler(int browser_socket_fd) {
 
         bool data_valid = process_message(session_id, message);
         if (!data_valid) {
-            // TODO: For Part 3.1, add code here to send the error message to the browser.
+            // Joe: Send basic error message
+            broadcast(session_id, "ERROR");
             continue;
         }
 
