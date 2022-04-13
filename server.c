@@ -258,9 +258,15 @@ void get_session_file_path(int session_id, char path[]) {
  * Loads every session from the disk one by one if it exists.
  */
 void load_all_sessions() {
-    // TODO: For Part 1.1, write your file operation code here.
-    // Hint: Use get_session_file_path() to get the file path for each session.
-    //       Don't forget to load all of sessions on the disk.
+    for(int i = 0; i < NUM_SESSIONS; i++) {
+        char path[SESSION_PATH_LEN];
+        get_session_file_path(i, path);
+        FILE *file;
+        if(file = fopen(path, "rb")) { //check that file exists
+            fread(&session_list[i],sizeof(session_t),1,file);
+            fclose(file);
+        }
+    }
 }
 
 /**
@@ -269,8 +275,13 @@ void load_all_sessions() {
  * @param session_id the session ID
  */
 void save_session(int session_id) {
-    // TODO: For Part 1.1, write your file operation code here.
-    // Hint: Use get_session_file_path() to get the file path for each session.
+    char path[SESSION_PATH_LEN];
+    get_session_file_path(session_id, path);
+    FILE *file;
+    file = fopen(path, "wb");
+    fwrite(&session_list[session_id],sizeof(session_t),1,file);
+    fclose(file);
+
 }
 
 /**
