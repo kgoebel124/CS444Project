@@ -84,7 +84,9 @@ void start_server(int port);
  */
 void session_to_str(int session_id, char result[]) {
     memset(result, 0, BUFFER_LEN);
+    pthread_mutex_lock(&session_list_mutex); // Joe: Accessing session_list, need mutex
     session_t session = session_list[session_id];
+    pthread_mutex_unlock(&session_list_mutex); // Joe: Release mutex
 
     for (int i = 0; i < NUM_VARIABLES; ++i) {
         if (session.variables[i]) {
@@ -237,11 +239,15 @@ bool process_message(int session_id, const char message[]) {
  * @param message the message to be broadcasted
  */
 void broadcast(int session_id, const char message[]) {
+    // Joe: Mutex needed here to prevent clients from changing between if statement and send_message
+
+    pthread_mutex_lock(&browser_list_mutex); // Joe: Accessing browser_list, need mutex
     for (int i = 0; i < NUM_BROWSER; ++i) {
         if (browser_list[i].in_use && browser_list[i].session_id == session_id) {
             send_message(browser_list[i].socket_fd, message);
         }
     }
+    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 }
 
 /**
@@ -294,10 +300,8 @@ void save_session(int session_id) {
 int register_browser(int browser_socket_fd) {
     int browser_id;
 
-    // TODO: For Part 2.2, identify the critical sections where different threads may read from/write to
-    //  the same shared static array browser_list and session_list. Place the lock and unlock
-    //  code around the critical sections identified.
-
+    // Joe: Mutex needed here to prevent clients from changing between if statement and assignments
+    pthread_mutex_lock(&browser_list_mutex); // Joe: Accessing browser_list, need mutex
     for (int i = 0; i < NUM_BROWSER; ++i) {
         if (!browser_list[i].in_use) {
             browser_id = i;
@@ -321,11 +325,22 @@ int register_browser(int browser_socket_fd) {
         }
     }
     browser_list[browser_id].session_id = session_id;
+    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 
     sprintf(message, "%d", session_id);
     send_message(browser_socket_fd, message);
 
     return browser_id;
+}
+
+/**
+ * Shim for browser_handler to handle multithreading w/o compiler warnings
+ *
+ * @param browser_socket_fd pointer to the socket file descriptor of the browser connected
+ */
+void *browser_handler_thread_shim(void *browser_socket_fd) {
+    browser_handler(*(int *)browser_socket_fd);
+    pthread_exit(NULL);
 }
 
 /**
@@ -340,8 +355,10 @@ void browser_handler(int browser_socket_fd) {
 
     browser_id = register_browser(browser_socket_fd);
 
+    pthread_mutex_lock(&browser_list_mutex); // Joe: Accessing browser_list, need mutex
     int socket_fd = browser_list[browser_id].socket_fd;
     int session_id = browser_list[browser_id].session_id;
+    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 
     printf("Successfully accepted Browser #%d for Session #%d.\n", browser_id, session_id);
 
@@ -352,17 +369,18 @@ void browser_handler(int browser_socket_fd) {
         receive_message(socket_fd, message);
         printf("Received message from Browser #%d for Session #%d: %s\n", browser_id, session_id, message);
 
-        if ((strcmp(message, "EXIT") == 0) || (strcmp(message, "exit") == 0)) {
+        // Joe: Treat empty message as invalid, instantly kicking client
+        // This prevents the loop from freaking out on nonstandard exit
+        // On browser side, we prevent sending empty messages
+        if (
+            (strcmp(message, "EXIT") == 0) ||
+            (strcmp(message, "exit") == 0) ||
+            (message[0] == '\0')
+        ) {
             close(socket_fd);
-            pthread_mutex_lock(&browser_list_mutex);
             browser_list[browser_id].in_use = false;
-            pthread_mutex_unlock(&browser_list_mutex);
             printf("Browser #%d exited.\n", browser_id);
             return;
-        }
-
-        if (message[0] == '\0') {
-            continue;
         }
 
         bool data_valid = process_message(session_id, message);
@@ -424,8 +442,13 @@ void start_server(int port) {
         }
 
         // Starts the handler thread for the new browser.
-        // TODO: For Part 2.1, creat a thread to run browser_handler() here.
-        browser_handler(browser_socket_fd);
+        pthread_t tid;
+        pthread_create(
+            &tid, // thread ID
+            NULL, // Some attribute?
+            browser_handler_thread_shim, // Function
+            (void *)&browser_socket_fd // Argument
+        );
     }
 
     // Closes the socket.
