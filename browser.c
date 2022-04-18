@@ -39,7 +39,7 @@ void server_listener();
 
 // Starts the browser.
 // Sets up the connection, start the listener thread,
-// and keeps a loop to read in the user's input and send it out.
+// and keeps a loop to read in the user's input and send it out. test
 void start_browser(const char host_ip[], int port);
 
 /**
