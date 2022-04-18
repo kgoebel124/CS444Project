@@ -84,7 +84,9 @@ void start_server(int port);
  */
 void session_to_str(int session_id, char result[]) {
     memset(result, 0, BUFFER_LEN);
+    pthread_mutex_lock(&session_list_mutex); // Joe: Accessing session_list, need mutex
     session_t session = session_list[session_id];
+    pthread_mutex_unlock(&session_list_mutex); // Joe: Release mutex
 
     for (int i = 0; i < NUM_VARIABLES; ++i) {
         if (session.variables[i]) {
@@ -146,18 +148,30 @@ bool process_message(int session_id, const char message[]) {
     // for the first variable and the second variable, respectively.
 
     // Makes a copy of the string since strtok() will modify the string that it is processing.
+
+    // Joe: Prevent buffer overflow
+    if (strlen(message) >= BUFFER_LEN)
+        return false;
+
     char data[BUFFER_LEN];
     strcpy(data, message);
 
     // Processes the result variable.
-    token = strtok(data, " ");
-    result_idx = token[0] - 'a';
+    token = strtok(data, " ");          // Joe (Comment): Get first token
+    if (token == NULL) return false;    // Joe: Prevent NULL token
+    if (strlen(token) != 1) return false; // Joe: Prevent invalid token length
+
+    result_idx = token[0] - 'a';        // Joe (Comment): Applies offset to token? Not sure what the point of this is
 
     // Processes "=".
     token = strtok(NULL, " ");
+    if (token == NULL) return false;    // Joe: Prevent NULL token
+    if (strcmp(token, "=") != 0) return false;    // Joe: Ensure equals token
 
     // Processes the first variable/value.
     token = strtok(NULL, " ");
+    if (token == NULL) return false;    // Joe: Prevent NULL token
+
     if (is_str_numeric(token)) {
         first_value = strtod(token, NULL);
     } else {
@@ -172,33 +186,50 @@ bool process_message(int session_id, const char message[]) {
         session_list[session_id].values[result_idx] = first_value;
         return true;
     }
+    if (strlen(token) != 1) return false; // Joe: Prevent invalid token length
     symbol = token[0];
 
     // Processes the second variable/value.
     token = strtok(NULL, " ");
+    if (token == NULL) return false; // Joe: Prevent NULL token
+
     if (is_str_numeric(token)) {
         second_value = strtod(token, NULL);
     } else {
+        if (strlen(token) != 1) return false; // Joe: Prevent invalid token length
         int second_idx = token[0] - 'a';
+
+        // Joe: Throw error when attempting to access undeclared variable
+        // TODO: I don't know why this isn't working
+        if (!session_list[session_id].variables[second_idx])
+            return false;
+
         second_value = session_list[session_id].values[second_idx];
     }
 
     // No data should be left over thereafter.
     token = strtok(NULL, " ");
+    if (token != NULL) return false; // Joe: ENSURE NULL token
 
     session_list[session_id].variables[result_idx] = true;
 
-    if (symbol == '+') {
-        session_list[session_id].values[result_idx] = first_value + second_value;
-    } else if (symbol == '-') {
-        session_list[session_id].values[result_idx] = first_value - second_value;
-    } else if (symbol == '*') {
-        session_list[session_id].values[result_idx] = first_value * second_value;
-    } else if (symbol == '/') {
-        session_list[session_id].values[result_idx] = first_value / second_value;
+    // Joe: Replaced if chain with switch, and catch unknown symbols
+    switch (symbol) {
+        case '+':
+            session_list[session_id].values[result_idx] = first_value + second_value;
+            return true;
+        case '-':
+            session_list[session_id].values[result_idx] = first_value - second_value;
+            return true;
+        case '*':
+            session_list[session_id].values[result_idx] = first_value * second_value;
+            return true;
+        case '/':
+            session_list[session_id].values[result_idx] = first_value / second_value;
+            return true;
+        default:
+            return false;
     }
-
-    return true;
 }
 
 /**
@@ -208,11 +239,15 @@ bool process_message(int session_id, const char message[]) {
  * @param message the message to be broadcasted
  */
 void broadcast(int session_id, const char message[]) {
+    // Joe: Mutex needed here to prevent clients from changing between if statement and send_message
+
+    pthread_mutex_lock(&browser_list_mutex); // Joe: Accessing browser_list, need mutex
     for (int i = 0; i < NUM_BROWSER; ++i) {
         if (browser_list[i].in_use && browser_list[i].session_id == session_id) {
             send_message(browser_list[i].socket_fd, message);
         }
     }
+    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 }
 
 /**
@@ -229,9 +264,15 @@ void get_session_file_path(int session_id, char path[]) {
  * Loads every session from the disk one by one if it exists.
  */
 void load_all_sessions() {
-    // TODO: For Part 1.1, write your file operation code here.
-    // Hint: Use get_session_file_path() to get the file path for each session.
-    //       Don't forget to load all of sessions on the disk.
+    for(int i = 0; i < NUM_SESSIONS; i++) {
+        char path[SESSION_PATH_LEN];
+        get_session_file_path(i, path);
+        FILE *file;
+        if(file = fopen(path, "rb")) { //check that file exists
+            fread(&session_list[i],sizeof(session_t),1,file);
+            fclose(file);
+        }
+    }
 }
 
 /**
@@ -240,8 +281,13 @@ void load_all_sessions() {
  * @param session_id the session ID
  */
 void save_session(int session_id) {
-    // TODO: For Part 1.1, write your file operation code here.
-    // Hint: Use get_session_file_path() to get the file path for each session.
+    char path[SESSION_PATH_LEN];
+    get_session_file_path(session_id, path);
+    FILE *file;
+    file = fopen(path, "wb");
+    fwrite(&session_list[session_id],sizeof(session_t),1,file);
+    fclose(file);
+
 }
 
 /**
@@ -254,10 +300,8 @@ void save_session(int session_id) {
 int register_browser(int browser_socket_fd) {
     int browser_id;
 
-    // TODO: For Part 2.2, identify the critical sections where different threads may read from/write to
-    //  the same shared static array browser_list and session_list. Place the lock and unlock
-    //  code around the critical sections identified.
-
+    // Joe: Mutex needed here to prevent clients from changing between if statement and assignments
+    pthread_mutex_lock(&browser_list_mutex); // Joe: Accessing browser_list, need mutex
     for (int i = 0; i < NUM_BROWSER; ++i) {
         if (!browser_list[i].in_use) {
             browser_id = i;
@@ -281,11 +325,22 @@ int register_browser(int browser_socket_fd) {
         }
     }
     browser_list[browser_id].session_id = session_id;
+    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 
     sprintf(message, "%d", session_id);
     send_message(browser_socket_fd, message);
 
     return browser_id;
+}
+
+/**
+ * Shim for browser_handler to handle multithreading w/o compiler warnings
+ *
+ * @param browser_socket_fd pointer to the socket file descriptor of the browser connected
+ */
+void *browser_handler_thread_shim(void *browser_socket_fd) {
+    browser_handler(*(int *)browser_socket_fd);
+    pthread_exit(NULL);
 }
 
 /**
@@ -300,8 +355,10 @@ void browser_handler(int browser_socket_fd) {
 
     browser_id = register_browser(browser_socket_fd);
 
+    pthread_mutex_lock(&browser_list_mutex); // Joe: Accessing browser_list, need mutex
     int socket_fd = browser_list[browser_id].socket_fd;
     int session_id = browser_list[browser_id].session_id;
+    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 
     printf("Successfully accepted Browser #%d for Session #%d.\n", browser_id, session_id);
 
@@ -312,22 +369,24 @@ void browser_handler(int browser_socket_fd) {
         receive_message(socket_fd, message);
         printf("Received message from Browser #%d for Session #%d: %s\n", browser_id, session_id, message);
 
-        if ((strcmp(message, "EXIT") == 0) || (strcmp(message, "exit") == 0)) {
+        // Joe: Treat empty message as invalid, instantly kicking client
+        // This prevents the loop from freaking out on nonstandard exit
+        // On browser side, we prevent sending empty messages
+        if (
+            (strcmp(message, "EXIT") == 0) ||
+            (strcmp(message, "exit") == 0) ||
+            (message[0] == '\0')
+        ) {
             close(socket_fd);
-            pthread_mutex_lock(&browser_list_mutex);
             browser_list[browser_id].in_use = false;
-            pthread_mutex_unlock(&browser_list_mutex);
             printf("Browser #%d exited.\n", browser_id);
             return;
         }
 
-        if (message[0] == '\0') {
-            continue;
-        }
-
         bool data_valid = process_message(session_id, message);
         if (!data_valid) {
-            // TODO: For Part 3.1, add code here to send the error message to the browser.
+            // Joe: Send basic error message
+            broadcast(session_id, "ERROR");
             continue;
         }
 
@@ -383,8 +442,13 @@ void start_server(int port) {
         }
 
         // Starts the handler thread for the new browser.
-        // TODO: For Part 2.1, creat a thread to run browser_handler() here.
-        browser_handler(browser_socket_fd);
+        pthread_t tid;
+        pthread_create(
+            &tid, // thread ID
+            NULL, // Some attribute?
+            browser_handler_thread_shim, // Function
+            (void *)&browser_socket_fd // Argument
+        );
     }
 
     // Closes the socket.

@@ -65,17 +65,24 @@ void read_user_input(char message[]) {
  * Otherwise, assigns the session ID to be -1.
  */
 void load_cookie() {
-    // TODO: For Part 1.2, write your file operation code here.
-    // Hint: The file path of the cookie is stored in COOKIE_PATH.
-    session_id = -1; // You may move this line to anywhere inside this fucntion.
+    FILE *file;
+    if(file = fopen(COOKIE_PATH, "rb")) { //check that file exists
+        fread(&session_id,sizeof(int),1,file);
+        fclose(file);
+    }
+    else {
+        session_id = -1;
+    }
 }
 
 /**
  * Saves the session ID to the cookie on the disk.
  */
 void save_cookie() {
-    // TODO: For Part 1.2, write your file operation code here.
-    // Hint: The file path of the cookie is stored in COOKIE_PATH.
+    FILE *file;
+    file = fopen(COOKIE_PATH, "wb");
+    fwrite(&session_id,sizeof(int),1,file);
+    fclose(file);
 }
 
 /**
@@ -91,22 +98,29 @@ void register_server() {
 }
 
 /**
+ * Shim for server_listener to handle multithreading w/o compiler warnings
+ */
+void *server_listener_thread_shim() {
+    server_listener();
+    pthread_exit(NULL);
+}
+
+/**
  * Listens to the server; keeps receiving and printing the messages from the server.
  */
 void server_listener() {
-    // TODO: For Part 2.3, uncomment the loop code that was commented out
-    //  when you are done with multithreading.
+    // Joe: Loop uncommented after enabling multithreading
+    while (browser_on) {
+        char message[BUFFER_LEN];
+        receive_message(server_socket_fd, message);
 
-    // while (browser_on) {
-
-    char message[BUFFER_LEN];
-    receive_message(server_socket_fd, message);
-
-    // TODO: For Part 3.1, add code here to print the error message.
-
-    puts(message);
-
-    //}
+        // Joe: Handle error message
+        if (strcmp(message, "ERROR") == 0) {
+            puts("Invalid input!");
+            return;
+        }
+        puts(message);
+    }
 }
 
 /**
@@ -147,17 +161,24 @@ void start_browser(const char host_ip[], int port) {
     save_cookie();
 
     // Main loop to read in the user's input and send it out.
+
+    // Joe: Starts the listener thread.
+    pthread_t tid;
+    pthread_create(
+        &tid,
+        NULL,
+        server_listener_thread_shim,
+        NULL
+    );
+
     while (browser_on) {
         char message[BUFFER_LEN];
         read_user_input(message);
-        send_message(server_socket_fd, message);
-
-        // Starts the listener thread.
-        // TODO: For Part 2.3, move server_listener() out of the loop and
-        //  creat a thread to run it.
-        // Hint: Should we place server_listener() before or after the loop?
-        server_listener();
+        if (strlen(message) > 0)
+            send_message(server_socket_fd, message);
     }
+    // Joe: Wait for thread to exit properly
+    pthread_join(tid, NULL);
 
     // Closes the socket.
     close(server_socket_fd);
