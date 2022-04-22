@@ -268,7 +268,8 @@ void load_all_sessions() {
         char path[SESSION_PATH_LEN];
         get_session_file_path(i, path);
         FILE *file;
-        if(file = fopen(path, "rb")) { //check that file exists
+        file = fopen(path, "rb");
+        if (file) { //check that file exists
             fread(&session_list[i],sizeof(session_t),1,file);
             fclose(file);
         }

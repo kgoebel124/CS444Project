@@ -66,7 +66,8 @@ void read_user_input(char message[]) {
  */
 void load_cookie() {
     FILE *file;
-    if(file = fopen(COOKIE_PATH, "rb")) { //check that file exists
+    file = fopen(COOKIE_PATH, "rb");
+    if (file) { //check that file exists
         fread(&session_id,sizeof(int),1,file);
         fclose(file);
     }

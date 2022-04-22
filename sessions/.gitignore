@@ -1,0 +1,2 @@
+# This file makes sure this folder always exists but that no sessions get committed
+/*.dat
