@@ -118,7 +118,7 @@ void server_listener() {
         // Joe: Handle error message
         if (strcmp(message, "ERROR") == 0) {
             puts("Invalid input!");
-            return;
+            continue;
         }
         puts(message);
     }
