@@ -161,6 +161,7 @@ bool process_message(int session_id, const char message[]) {
     if (token == NULL) return false;    // Joe: Prevent NULL token
     if (strlen(token) != 1) return false; // Joe: Prevent invalid token length
 
+
     result_idx = token[0] - 'a';        // Joe (Comment): Applies offset to token? Not sure what the point of this is
 
     // Processes "=".
@@ -176,6 +177,10 @@ bool process_message(int session_id, const char message[]) {
         first_value = strtod(token, NULL);
     } else {
         int first_idx = token[0] - 'a';
+        
+        if (!session_list[session_id].variables[first_idx]) //Stephen: should prevent undeclared variables being used
+            return false;
+        
         first_value = session_list[session_id].values[first_idx];
     }
 
@@ -199,8 +204,7 @@ bool process_message(int session_id, const char message[]) {
         if (strlen(token) != 1) return false; // Joe: Prevent invalid token length
         int second_idx = token[0] - 'a';
 
-        // Joe: Throw error when attempting to access undeclared variable
-        // TODO: I don't know why this isn't working
+        // Stephen: fixed issue with undeclared variables being allowed
         if (!session_list[session_id].variables[second_idx])
             return false;
 
