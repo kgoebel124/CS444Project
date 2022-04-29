@@ -19,12 +19,6 @@
 #define DATA_DIR "./sessions"
 #define SESSION_PATH_LEN 128
 
-//Stephen: hash table implementation starts here
-unsigned int hash(int key) {
-
-}
-//Stephen: hash table implementation ends here
-
 
 typedef struct browser_struct {
     bool in_use;
