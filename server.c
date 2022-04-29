@@ -10,12 +10,15 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
+#include <time.h>
+
 
 #define NUM_VARIABLES 26
 #define NUM_SESSIONS 128
 #define NUM_BROWSER 128
 #define DATA_DIR "./sessions"
 #define SESSION_PATH_LEN 128
+
 
 typedef struct browser_struct {
     bool in_use;
@@ -29,8 +32,8 @@ typedef struct session_struct {
     double values[NUM_VARIABLES];
 } session_t;
 
+
 static browser_t browser_list[NUM_BROWSER];                             // Stores the information of all browsers.
-// TODO: For Part 3.2, convert the session_list to a simple hashmap/dictionary.
 static session_t session_list[NUM_SESSIONS];                            // Stores the information of all sessions.
 static pthread_mutex_t browser_list_mutex = PTHREAD_MUTEX_INITIALIZER;  // A mutex lock for the browser list.
 static pthread_mutex_t session_list_mutex = PTHREAD_MUTEX_INITIALIZER;  // A mutex lock for the session list.
@@ -84,7 +87,9 @@ void start_server(int port);
  */
 void session_to_str(int session_id, char result[]) {
     memset(result, 0, BUFFER_LEN);
+    pthread_mutex_lock(&session_list_mutex); // Joe: Accessing session_list, need mutex
     session_t session = session_list[session_id];
+    pthread_mutex_unlock(&session_list_mutex); // Joe: Release mutex
 
     for (int i = 0; i < NUM_VARIABLES; ++i) {
         if (session.variables[i]) {
@@ -141,9 +146,6 @@ bool process_message(int session_id, const char message[]) {
     char symbol;
     double second_value;
 
-    // TODO: For Part 3.1, write code to determine if the input is invalid and return false if it is.
-    // Hint: Also need to check if the given variable does exist (i.e., it has been assigned with some value)
-    // for the first variable and the second variable, respectively.
 
     // Makes a copy of the string since strtok() will modify the string that it is processing.
 
@@ -175,10 +177,10 @@ bool process_message(int session_id, const char message[]) {
         first_value = strtod(token, NULL);
     } else {
         int first_idx = token[0] - 'a';
-        
+
         if (!session_list[session_id].variables[first_idx]) //Stephen: should prevent undeclared variables being used
             return false;
-        
+
         first_value = session_list[session_id].values[first_idx];
     }
 
@@ -241,11 +243,15 @@ bool process_message(int session_id, const char message[]) {
  * @param message the message to be broadcasted
  */
 void broadcast(int session_id, const char message[]) {
+    // Joe: Mutex needed here to prevent clients from changing between if statement and send_message
+
+    pthread_mutex_lock(&browser_list_mutex); // Joe: Accessing browser_list, need mutex
     for (int i = 0; i < NUM_BROWSER; ++i) {
         if (browser_list[i].in_use && browser_list[i].session_id == session_id) {
             send_message(browser_list[i].socket_fd, message);
         }
     }
+    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 }
 
 /**
@@ -266,8 +272,7 @@ void load_all_sessions() {
         char path[SESSION_PATH_LEN];
         get_session_file_path(i, path);
         FILE *file;
-        file = fopen(path, "rb");
-        if (file) { //check that file exists
+        if(file = fopen(path, "rb")) { //check that file exists
             fread(&session_list[i],sizeof(session_t),1,file);
             fclose(file);
         }
@@ -312,22 +317,27 @@ int register_browser(int browser_socket_fd) {
 
     char message[BUFFER_LEN];
     receive_message(browser_socket_fd, message);
-
+	//stephen: updated to assign the session id randomly as a key to access the other data in the session object
     int session_id = strtol(message, NULL, 10);
     if (session_id == -1) {
-        for (int i = 0; i < NUM_SESSIONS; ++i) {
-            if (!session_list[i].in_use) {
-                session_id = i;
-                session_list[session_id].in_use = true;
-                break;
-            }
+      time_t t;
+      srand((unsigned) time(&t));
+      bool unique = false;
+      int random_session;
+      while(!unique) {
+        random_session = rand() % 128;
+        if(!session_list[random_session].in_use) {
+          session_id = random_session;
+          session_list[session_id].in_use = true;
+          unique = true;
         }
+      }
     }
     browser_list[browser_id].session_id = session_id;
+    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 
     sprintf(message, "%d", session_id);
     send_message(browser_socket_fd, message);
-    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 
     return browser_id;
 }
@@ -354,8 +364,10 @@ void browser_handler(int browser_socket_fd) {
 
     browser_id = register_browser(browser_socket_fd);
 
+    pthread_mutex_lock(&browser_list_mutex); // Joe: Accessing browser_list, need mutex
     int socket_fd = browser_list[browser_id].socket_fd;
     int session_id = browser_list[browser_id].session_id;
+    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 
     printf("Successfully accepted Browser #%d for Session #%d.\n", browser_id, session_id);
 
