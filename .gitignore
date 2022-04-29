@@ -1,2 +1,6 @@
+# Don't commit binaries
 /browser
 /server
+
+# Don't commit cookie
+/browser.cookie

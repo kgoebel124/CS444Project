@@ -84,9 +84,7 @@ void start_server(int port);
  */
 void session_to_str(int session_id, char result[]) {
     memset(result, 0, BUFFER_LEN);
-    pthread_mutex_lock(&session_list_mutex); // Joe: Accessing session_list, need mutex
     session_t session = session_list[session_id];
-    pthread_mutex_unlock(&session_list_mutex); // Joe: Release mutex
 
     for (int i = 0; i < NUM_VARIABLES; ++i) {
         if (session.variables[i]) {
@@ -243,15 +241,11 @@ bool process_message(int session_id, const char message[]) {
  * @param message the message to be broadcasted
  */
 void broadcast(int session_id, const char message[]) {
-    // Joe: Mutex needed here to prevent clients from changing between if statement and send_message
-
-    pthread_mutex_lock(&browser_list_mutex); // Joe: Accessing browser_list, need mutex
     for (int i = 0; i < NUM_BROWSER; ++i) {
         if (browser_list[i].in_use && browser_list[i].session_id == session_id) {
             send_message(browser_list[i].socket_fd, message);
         }
     }
-    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 }
 
 /**
@@ -272,7 +266,8 @@ void load_all_sessions() {
         char path[SESSION_PATH_LEN];
         get_session_file_path(i, path);
         FILE *file;
-        if(file = fopen(path, "rb")) { //check that file exists
+        file = fopen(path, "rb");
+        if (file) { //check that file exists
             fread(&session_list[i],sizeof(session_t),1,file);
             fclose(file);
         }
@@ -329,10 +324,10 @@ int register_browser(int browser_socket_fd) {
         }
     }
     browser_list[browser_id].session_id = session_id;
-    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 
     sprintf(message, "%d", session_id);
     send_message(browser_socket_fd, message);
+    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 
     return browser_id;
 }
@@ -359,10 +354,8 @@ void browser_handler(int browser_socket_fd) {
 
     browser_id = register_browser(browser_socket_fd);
 
-    pthread_mutex_lock(&browser_list_mutex); // Joe: Accessing browser_list, need mutex
     int socket_fd = browser_list[browser_id].socket_fd;
     int session_id = browser_list[browser_id].session_id;
-    pthread_mutex_unlock(&browser_list_mutex); // Joe: Release mutex
 
     printf("Successfully accepted Browser #%d for Session #%d.\n", browser_id, session_id);
 
