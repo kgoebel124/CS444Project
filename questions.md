@@ -1,4 +1,13 @@
-## Part 3
+In this project we demonstrated an understanding of safe multithreading practices through our use of mutex locks. A second achievement is that we implemented persistent browsing that works between server restarts and client reconnections through the use of saved session information and client-side cookies. We also were able to collaborate using GitHub and achieved a good workflow using branches and pull requests to safely merge all code smoothly. We also were able to pay attention to detail with bug fixing, including the invalid input handling listed in the assignment details, but also unmentioned issues such as server freezing on a sudden client disconnect. 
+
+Contributions:
+
+Kristen
+
+Joe
+
+Stephen
+
 
 ### Question 1 (Joe)
 
