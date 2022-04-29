@@ -12,6 +12,8 @@ Completed all code for Part 1.
 
 ### Stephen
 
+Worked on the code for Part 3. 
+
 ## Questions
 
 ### Question 1 (Joe)
